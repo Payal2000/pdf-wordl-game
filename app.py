@@ -3,6 +3,7 @@ import re
 import random
 import pandas as pd
 from pathlib import Path
+import io
 from utils.pdf_loader import extract_text_from_pdf, chunk_text
 from utils.embed_store import upsert_chunks, query_chunks
 from utils.clue_generator import generate_clue
@@ -11,6 +12,10 @@ st.set_page_config(page_title="📘 AI Wordl from PDF", layout="wide")
 st.title("📘 AI Wordl from PDF")
 
 SCORES_FILE = "scores.csv"
+PRELOADED_PDFS = {
+    "🧀 Fast Food Trivia": "trivia_pdfs/fastfood_trivia.pdf",
+    "🌍 General Knowledge Trivia": "trivia_pdfs/general_knowledge_trivia.pdf",
+}
 
 # Session state defaults
 for key in [
@@ -40,10 +45,28 @@ def save_score(name, score, word, result):
     df = pd.concat([df, new_entry], ignore_index=True)
     df.to_csv(SCORES_FILE, index=False)
 
-uploaded_file = st.sidebar.file_uploader("📄 Upload a PDF to start", type=["pdf"])
-if uploaded_file and st.sidebar.button("▶ Start Game"):
+st.sidebar.title("📚 Choose Trivia Game")
+use_uploaded = st.sidebar.checkbox("Upload your own PDF")
+selected_file = None
+
+if use_uploaded:
+    uploaded_file = st.sidebar.file_uploader("📄 Upload a PDF to start", type=["pdf"])
+    if uploaded_file and st.sidebar.button("▶ Start Game"):
+        selected_file = uploaded_file
+else:
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🧀 Fast Food Trivia"):
+            with open(PRELOADED_PDFS["🧀 Fast Food Trivia"], "rb") as f:
+                selected_file = io.BytesIO(f.read())
+    with col2:
+        if st.button("🌍 General Knowledge Trivia"):
+            with open(PRELOADED_PDFS["🌍 General Knowledge Trivia"], "rb") as f:
+                selected_file = io.BytesIO(f.read())
+
+if selected_file:
     with st.spinner("Processing PDF..."):
-        full_text = extract_text_from_pdf(uploaded_file)
+        full_text = extract_text_from_pdf(selected_file)
         chunks = chunk_text(full_text)
         chunks = [chunk.strip() for chunk in chunks if chunk.strip()]
         st.session_state.chunks = chunks
@@ -54,7 +77,6 @@ if uploaded_file and st.sidebar.button("▶ Start Game"):
 
         upsert_chunks(chunks)
 
-        # ✅ Fixed the regex pattern here
         answers = re.findall(r"A:\s*([a-zA-Z]{5})\b", full_text)
         words = [ans.upper() for ans in answers if ans.isalpha()]
 
@@ -67,7 +89,6 @@ if uploaded_file and st.sidebar.button("▶ Start Game"):
         st.session_state.clue = generate_clue(st.session_state.target_word, context_chunks)
         st.success("🎯 Game Ready!")
 
-# Feedback rendering
 COLORS = {"🟩": "#4CAF50", "🟨": "#FFC107", "⬜": "#9E9E9E"}
 
 def render_feedback(guess, feedback):
@@ -139,7 +160,6 @@ if st.session_state.clue and not st.session_state.game_over:
             )
             st.markdown(f"🧠 Bonus Hint: *{extra_hint}*")
 
-# Score entry and leaderboard
 if st.session_state.game_over and not st.session_state.score_submitted:
     st.subheader("🏁 Submit Your Score")
     name = st.text_input("Name:")
@@ -161,7 +181,6 @@ if not scores.empty:
 else:
     st.info("No scores yet. Upload a PDF and start playing!")
 
-# Footer options
 if st.session_state.game_over:
     play_col1, play_col2 = st.columns(2)
     with play_col1:
